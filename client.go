@@ -26,7 +26,7 @@ func OpenTracingClientUnaryInterceptor() grpc.UnaryClientInterceptor {
 			parentCtx = parent.Context()
 		}
 		clientSpan := opentracing.GlobalTracer().StartSpan(
-			method,
+			"gRPC unary "+method,
 			opentracing.ChildOf(parentCtx),
 			ext.SpanKindRPCClient,
 			gRPCComponentTag,
@@ -45,12 +45,19 @@ func OpenTracingClientUnaryInterceptor() grpc.UnaryClientInterceptor {
 		}
 		clientSpan.SetTag(OpenTracingTagUnary, method)
 		ctx = metadata.NewContext(ctx, md)
-		clientSpan.LogFields(log.Object("gRPC request", req))
+		reqData := req.(Stringer).String()
+		clientSpan.LogFields(log.Object("gRPC request", reqData))
+		clientSpan.SetTag(OpenTracingTagUnarySend, reqData)
 		err = invoker(ctx, method, req, resp, cc, opts...)
 		if err == nil {
-			clientSpan.LogFields(log.Object("gRPC response", resp))
+			respData := resp.(Stringer).String()
+			clientSpan.LogFields(log.Object("gRPC response", respData))
+			clientSpan.SetTag(OpenTracingTagUnaryRecv, respData)
+			clientSpan.SetTag(OpenTracingTagGrpcCode, codes.OK)
 		} else {
 			clientSpan.LogFields(log.String("event", "gRPC error"), log.Error(err))
+			clientSpan.SetTag(OpenTracingTagGrpcCode, grpc.Code(err))
+			clientSpan.SetTag(OpenTracingTagGrpcError, err.Error())
 			ext.Error.Set(clientSpan, true)
 		}
 		return err
@@ -62,10 +69,10 @@ func OpenTracingClientStreamInterceptor() grpc.StreamClientInterceptor {
 
 		var err error
 
-		clientSpan, ctx := opentracing.StartSpanFromContext(ctx, "GRPS stream "+method)
+		clientSpan, ctx := opentracing.StartSpanFromContext(ctx, "gRPS stream "+method)
 		clientSpan.SetTag(OpenTracingTagStream, desc.StreamName)
 		ext.SpanKindRPCClient.Set(clientSpan)
-		ext.Component.Set(clientSpan, "grpc")
+		ext.Component.Set(clientSpan, "gRPC")
 		md, ok := metadata.FromContext(ctx)
 		if !ok {
 			md = metadata.New(nil)
@@ -78,7 +85,6 @@ func OpenTracingClientStreamInterceptor() grpc.StreamClientInterceptor {
 		}
 		ctx = metadata.NewContext(ctx, md)
 
-		clientSpan.LogFields(log.Object("gRPC stream", desc.StreamName))
 		clientStream, err := streamer(ctx, desc, cc, method, opts...)
 		if err != nil {
 			clientSpan.SetTag(OpenTracingTagGrpcError, err.Error())
@@ -86,6 +92,7 @@ func OpenTracingClientStreamInterceptor() grpc.StreamClientInterceptor {
 			ext.Error.Set(clientSpan, true)
 			return nil, err
 		}
+		clientSpan.LogFields(log.Object("open stream", err))
 
 		return &clientStreamSpy{clientStream, method, desc.StreamName, clientSpan, ctx}, nil
 	}
@@ -121,6 +128,7 @@ func (c *clientStreamSpy) SendMsg(m interface{}) error {
 		clientSpan.SetTag(OpenTracingTagGrpcCode, grpc.Code(err))
 		clientSpan.SetTag(OpenTracingTagGrpcError, err.Error())
 	}
+	c.parentSpan.LogFields(log.String("sent", "1"))
 	return err
 }
 
@@ -148,5 +156,6 @@ func (c *clientStreamSpy) RecvMsg(m interface{}) error {
 		clientSpan.SetTag(OpenTracingTagGrpcCode, grpc.Code(err))
 		clientSpan.SetTag(OpenTracingTagGrpcError, err.Error())
 	}
+	c.parentSpan.LogFields(log.String("recv", "1"))
 	return err
 }

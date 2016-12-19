@@ -18,6 +18,8 @@ const (
 	OpenTracingTagStream     = "grpc.stream"
 	OpenTracingTagStreamSend = "grpc.stream.send"
 	OpenTracingTagStreamRecv = "grpc.stream.recv"
+	OpenTracingTagUnarySend  = "grpc.unary.send"
+	OpenTracingTagUnaryRecv  = "grpc.unary.recv"
 	OpenTracingTagGrpcError  = "grpc.stream.error"
 	OpenTracingTagGrpcCode   = "grpc.code"
 )

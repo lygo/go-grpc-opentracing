@@ -28,17 +28,19 @@ func OpenTracingServerUnaryInterceptor() grpc.UnaryServerInterceptor {
 			// implementations to do something appropriate for the time being.
 		}
 		serverSpan := opentracing.GlobalTracer().StartSpan(
-			info.FullMethod,
+			"gRPC unary "+info.FullMethod,
 			ext.RPCServerOption(spanContext),
 			gRPCComponentTag,
 		)
 		defer serverSpan.Finish()
 
 		ctx = opentracing.ContextWithSpan(ctx, serverSpan)
-		serverSpan.LogFields(log.Object("gRPC request", req))
+		serverSpan.LogFields(log.Object("gRPC request", req.(Stringer).String()))
+		serverSpan.SetTag(OpenTracingTagUnaryRecv, req.(Stringer).String())
 		resp, err = handler(ctx, req)
 		if err == nil {
-			serverSpan.LogFields(log.Object("gRPC response", resp))
+			serverSpan.LogFields(log.Object("gRPC response", resp.(Stringer).String()))
+			serverSpan.SetTag(OpenTracingTagUnarySend, resp.(Stringer).String())
 		} else {
 			ext.Error.Set(serverSpan, true)
 			serverSpan.LogFields(log.String("event", "gRPC error"), log.Error(err))
@@ -60,20 +62,21 @@ func OpenTracingServerStreamInterceptor() grpc.StreamServerInterceptor {
 			grpclog.Printf(err.Error())
 		}
 		serverSpan := opentracing.GlobalTracer().StartSpan(
-			info.FullMethod,
+			"gRPC stream "+info.FullMethod,
 			ext.RPCServerOption(spanContext),
 			gRPCComponentTag,
 		)
 		ext.SpanKindRPCServer.Set(serverSpan)
 		defer serverSpan.Finish()
 		ctx = opentracing.ContextWithSpan(ctx, serverSpan)
-		serverSpan.LogFields(log.Object("gRPC", "open steam"))
 
+		serverSpan.LogFields(log.String("open steam", info.FullMethod))
 		err = handler(srv, &serverStreamSpy{ss, serverSpan, ctx})
 		if err != nil {
 			ext.Error.Set(serverSpan, true)
 			serverSpan.LogFields(log.String("event", "gRPC error"), log.Error(err))
 		}
+		serverSpan.LogFields(log.String("close steam", info.FullMethod))
 		return err
 	}
 }
@@ -104,6 +107,7 @@ func (s *serverStreamSpy) SendMsg(m interface{}) error {
 		span.SetTag(OpenTracingTagGrpcCode, grpc.Code(err))
 		span.SetTag(OpenTracingTagGrpcError, err.Error())
 	}
+	s.parentSpan.LogFields(log.String("sent", "1"))
 	return err
 }
 
@@ -128,5 +132,6 @@ func (s *serverStreamSpy) RecvMsg(m interface{}) error {
 
 		span.SetTag(OpenTracingTagStreamRecv, v)
 	}
+	s.parentSpan.LogFields(log.String("recv", "1"))
 	return err
 }
