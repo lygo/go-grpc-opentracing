@@ -1,4 +1,4 @@
-package otgrpc
+package grpc_opentracing
 
 import (
 	"strings"
@@ -11,6 +11,15 @@ import (
 var (
 	// Morally a const:
 	gRPCComponentTag = opentracing.Tag{string(ext.Component), "gRPC"}
+)
+
+const (
+	OpenTracingTagUnary      = "grpc.unary"
+	OpenTracingTagStream     = "grpc.stream"
+	OpenTracingTagStreamSend = "grpc.stream.send"
+	OpenTracingTagStreamRecv = "grpc.stream.recv"
+	OpenTracingTagGrpcError  = "grpc.stream.error"
+	OpenTracingTagGrpcCode   = "grpc.code"
 )
 
 // metadataReaderWriter satisfies both the opentracing.TextMapReader and

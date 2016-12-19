@@ -1,4 +1,4 @@
-package otgrpc
+package grpc_opentracing
 
 import (
 	"github.com/opentracing/opentracing-go"
@@ -11,29 +11,7 @@ import (
 	"io"
 )
 
-const OpenTracingTagStream = "grpc.stream"
-const OpenTracingTagStreamSend = "grpc.stream.send"
-const OpenTracingTagStreamRecv = "grpc.stream.recv"
-const OpenTracingTagGrpcError = "grpc.stream.error"
-const OpenTracingTagGrpcCode = "grpc.code"
-
-// OpenTracingClientInterceptor returns a grpc.UnaryClientInterceptor suitable
-// for use in a grpc.Dial call.
-//
-// For example:
-//
-//     conn, err := grpc.Dial(
-//         address,
-//         ...,  // (existing DialOptions)
-//         grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(tracer)))
-//
-// All gRPC client spans will inject the OpenTracing SpanContext into the gRPC
-// metadata; they will also look in the context.Context for an active
-// in-process parent Span and establish a ChildOf reference if such a parent
-// Span could be found.
-func OpenTracingClientInterceptor(tracer opentracing.Tracer, optFuncs ...Option) grpc.UnaryClientInterceptor {
-	otgrpcOpts := newOptions()
-	otgrpcOpts.apply(optFuncs...)
+func OpenTracingClientUnaryInterceptor() grpc.UnaryClientInterceptor {
 	return func(
 		ctx context.Context,
 		method string,
@@ -47,7 +25,7 @@ func OpenTracingClientInterceptor(tracer opentracing.Tracer, optFuncs ...Option)
 		if parent := opentracing.SpanFromContext(ctx); parent != nil {
 			parentCtx = parent.Context()
 		}
-		clientSpan := tracer.StartSpan(
+		clientSpan := opentracing.GlobalTracer().StartSpan(
 			method,
 			opentracing.ChildOf(parentCtx),
 			ext.SpanKindRPCClient,
@@ -60,34 +38,26 @@ func OpenTracingClientInterceptor(tracer opentracing.Tracer, optFuncs ...Option)
 		}
 		mdWriter := metadataReaderWriter{md}
 
-		err = tracer.Inject(clientSpan.Context(), opentracing.HTTPHeaders, mdWriter)
+		err = opentracing.GlobalTracer().Inject(clientSpan.Context(), opentracing.HTTPHeaders, mdWriter)
 		// We have no better place to record an error than the Span itself :-/
 		if err != nil {
 			clientSpan.LogFields(log.String("event", "Tracer.Inject() failed"), log.Error(err))
 		}
+		clientSpan.SetTag(OpenTracingTagUnary, method)
 		ctx = metadata.NewContext(ctx, md)
-		if otgrpcOpts.logPayloads {
-			clientSpan.LogFields(log.Object("gRPC request", req))
-		}
+		clientSpan.LogFields(log.Object("gRPC request", req))
 		err = invoker(ctx, method, req, resp, cc, opts...)
 		if err == nil {
-			if otgrpcOpts.logPayloads {
-				clientSpan.LogFields(log.Object("gRPC response", resp))
-			}
+			clientSpan.LogFields(log.Object("gRPC response", resp))
 		} else {
 			clientSpan.LogFields(log.String("event", "gRPC error"), log.Error(err))
 			ext.Error.Set(clientSpan, true)
-		}
-		if otgrpcOpts.decorator != nil {
-			otgrpcOpts.decorator(clientSpan, method, req, resp, err)
 		}
 		return err
 	}
 }
 
-func OpenTracingClientStreamInterceptor(tracer opentracing.Tracer, optFuncs ...Option) grpc.StreamClientInterceptor {
-	otgrpcOpts := newOptions()
-	otgrpcOpts.apply(optFuncs...)
+func OpenTracingClientStreamInterceptor() grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 
 		var err error
@@ -101,15 +71,14 @@ func OpenTracingClientStreamInterceptor(tracer opentracing.Tracer, optFuncs ...O
 			md = metadata.New(nil)
 		}
 		mdWriter := metadataReaderWriter{md}
-		err = tracer.Inject(clientSpan.Context(), opentracing.HTTPHeaders, mdWriter)
+		err = opentracing.GlobalTracer().Inject(clientSpan.Context(), opentracing.HTTPHeaders, mdWriter)
 		// We have no better place to record an error than the Span itself :-/
 		if err != nil {
 			clientSpan.LogFields(log.String("event", "Tracer.Inject() failed"), log.Error(err))
 		}
 		ctx = metadata.NewContext(ctx, md)
-		if otgrpcOpts.logPayloads {
-			clientSpan.LogFields(log.Object("gRPC stream", desc.StreamName))
-		}
+
+		clientSpan.LogFields(log.Object("gRPC stream", desc.StreamName))
 		clientStream, err := streamer(ctx, desc, cc, method, opts...)
 		if err != nil {
 			clientSpan.SetTag(OpenTracingTagGrpcError, err.Error())
@@ -135,9 +104,9 @@ type clientStreamSpy struct {
 }
 
 func (c *clientStreamSpy) SendMsg(m interface{}) error {
-	clientSpan, _ := opentracing.StartSpanFromContext(c.parentCtx, "GRPC send "+c.method)
+	clientSpan, _ := opentracing.StartSpanFromContext(c.parentCtx, "gRPC Send")
 	ext.SpanKindRPCClient.Set(clientSpan)
-	ext.Component.Set(clientSpan, "grpc")
+	ext.Component.Set(clientSpan, "gRPC")
 	var v string
 	if m == nil {
 		v = `nil`
@@ -156,9 +125,9 @@ func (c *clientStreamSpy) SendMsg(m interface{}) error {
 }
 
 func (c *clientStreamSpy) RecvMsg(m interface{}) error {
-	clientSpan, _ := opentracing.StartSpanFromContext(c.parentCtx, "GRPC recv "+c.method)
+	clientSpan, _ := opentracing.StartSpanFromContext(c.parentCtx, "gRPC Recv")
 	ext.SpanKindRPCClient.Set(clientSpan)
-	ext.Component.Set(clientSpan, "grpc")
+	ext.Component.Set(clientSpan, "gRPC")
 	defer clientSpan.Finish()
 	err := c.ClientStream.RecvMsg(m)
 	if err == nil {

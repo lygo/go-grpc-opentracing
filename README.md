@@ -1,18 +1,22 @@
 # OpenTracing support for gRPC in Go
 
-The `otgrpc` package makes it easy to add OpenTracing support to gRPC-based
+The `grpc_opentracing` package makes it easy to add OpenTracing support to gRPC-based
 systems in Go.
+
+## Status
+
+Work in progress
 
 ## Installation
 
 ```
-go get github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc
+go get github.com/lygo/go-grpc-opentracing
 ```
 
 ## Documentation
 
 See the basic usage examples below and the [package documentation on
-godoc.org](https://godoc.org/github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc).
+godoc.org](https://godoc.org/github.com/lygo/go-grpc-opentracing).
 
 ## Client-side usage example
 
@@ -28,7 +32,12 @@ conn, err := grpc.Dial(
     address,
     ... // other options
     grpc.WithUnaryInterceptor(
-        otgrpc.OpenTracingClientInterceptor(tracer)))
+        grpc_opentracing.OpenTracingClientUnaryInterceptor(),
+    ),
+    grpc.WithStreamInterceptor(
+            grpc_opentracing.OpenTracingClientStreamInterceptor(),
+    ),
+)
 
 // All future RPC activity involving `conn` will be automatically traced.
 ```
@@ -46,7 +55,12 @@ var tracer opentracing.Tracer = ...
 s := grpc.NewServer(
     ... // other options
     grpc.UnaryInterceptor(
-        otgrpc.OpenTracingServerInterceptor(tracer)))
+        grpc_opentracing.OpenTracingServerUnaryInterceptor(),
+    ),
+    grpc.StreamInterceptor(
+        grpc_opentracing.OpenTracingServerStreamInterceptor(),
+    ),
+),
 
 // All future RPC activity involving `s` will be automatically traced.
 ```
