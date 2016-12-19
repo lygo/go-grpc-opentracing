@@ -64,4 +64,8 @@ s := grpc.NewServer(
 
 // All future RPC activity involving `s` will be automatically traced.
 ```
+## TODO
+
+ - tests
+ - settle tracing format
 
