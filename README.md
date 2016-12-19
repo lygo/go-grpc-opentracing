@@ -60,7 +60,7 @@ s := grpc.NewServer(
     grpc.StreamInterceptor(
         grpc_opentracing.OpenTracingServerStreamInterceptor(),
     ),
-),
+)
 
 // All future RPC activity involving `s` will be automatically traced.
 ```
